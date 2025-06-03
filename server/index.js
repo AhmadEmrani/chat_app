@@ -2,26 +2,36 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
+const cors = require('cors');
 const User = require('./models/User');
 const Message = require('./models/Message');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
 
-// برای مدیریت body درخواست‌های JSON
+// تنظیم CORS برای Socket.IO
+const io = socketIo(server, {
+  cors: {
+    origin: '*', // اجازه به همه مبادی
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
+
+// فعال کردن CORS برای Express
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// اتصال به MongoDB
-mongoose.connect('mongodb://localhost:27017/chat-app', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => console.log('Connected to MongoDB'));
+mongoose.connect('mongodb://localhost:27017/chat-app')
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((error) => console.error('MongoDB connection error:', error));
 
-// ارائه فایل‌های کلاینت
-app.use(express.static('../client'));
 
-// API برای افزودن کاربر جدید
 app.post('/api/users', async (req, res) => {
   try {
     const { userId, username } = req.body;
@@ -47,16 +57,13 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// مدیریت اتصال سوکت
 io.on('connection', (socket) => {
   console.log('New client connected');
 
-  // تنظیم Room برای چت خصوصی
   socket.on('join', async ({ senderId, receiverId }) => {
-    const room = [senderId, receiverId].sort().join('_'); // Room منحصر به فرد برای هر جفت کاربر
+    const room = [senderId, receiverId].sort().join('_');
     socket.join(room);
 
-    // ثبت یا به‌روزرسانی کاربران
     await User.findOneAndUpdate(
       { userId: senderId },
       { userId: senderId, username: `User_${senderId}`, $addToSet: { chatPartners: receiverId } },
@@ -68,11 +75,9 @@ io.on('connection', (socket) => {
       { upsert: true }
     );
 
-    // ارسال لیست شرکای چت به کاربر
     const user = await User.findOne({ userId: senderId });
     socket.emit('chatPartners', user.chatPartners);
 
-    // بارگذاری پیام‌های قبلی
     const messages = await Message.find({
       $or: [
         { sender: senderId, receiver: receiverId },
@@ -82,7 +87,6 @@ io.on('connection', (socket) => {
     socket.emit('loadMessages', messages);
   });
 
-  // مدیریت ارسال پیام
   socket.on('sendMessage', async ({ senderId, receiverId, message }) => {
     const room = [senderId, receiverId].sort().join('_');
     const newMessage = new Message({
@@ -92,7 +96,6 @@ io.on('connection', (socket) => {
     });
     await newMessage.save();
 
-    // ارسال پیام به Room
     io.to(room).emit('receiveMessage', newMessage);
   });
 

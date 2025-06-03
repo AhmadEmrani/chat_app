@@ -1,6 +1,33 @@
-const socket = io('http://localhost:3000');
+const socket = io('http://localhost:3000'); // آدرس سرور به صراحت مشخص شده
 
 let senderId, receiverId;
+
+async function addUser() {
+  const userId = document.getElementById('newUserId').value;
+  const username = document.getElementById('newUsername').value;
+  if (!userId || !username) {
+    alert('لطفاً آی‌دی کاربر و نام کاربری را وارد کنید');
+    return;
+  }
+
+  try {
+    const response = await fetch('http://localhost:3000/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, username }),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      alert('کاربر با موفقیت اضافه شد');
+      document.getElementById('newUserId').value = '';
+      document.getElementById('newUsername').value = '';
+    } else {
+      alert(data.error);
+    }
+  } catch (error) {
+    alert('خطا در افزودن کاربر: ' + error.message);
+  }
+}
 
 function startChat() {
   senderId = document.getElementById('senderId').value;
@@ -24,6 +51,7 @@ function sendMessage() {
 
 socket.on('loadMessages', (messages) => {
   const messagesDiv = document.getElementById('messages');
+  messagesDiv.innerHTML = '';
   messages.forEach((msg) => {
     const div = document.createElement('div');
     div.className = msg.sender === senderId ? 'message sent' : 'message received';
