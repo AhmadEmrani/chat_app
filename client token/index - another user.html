@@ -1,0 +1,182 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat App</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; display: flex; margin: 0; direction: rtl; }
+    #sidebar { width: 200px; background: #f1f1f1; padding: 10px; border-left: 1px solid #ccc; }
+    #chat { flex: 1; padding: 20px; }
+    #messages { height: 400px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    #messageInput { width: 80%; padding: 5px; }
+    button { padding: 5px 10px; }
+    .message { margin: 5px 0; }
+    .message.sent { text-align: left; color: blue; }
+    .message.received { text-align: right; color: green; }
+    .partner { cursor: pointer; padding: 5px; }
+    .partner:hover { background: #ddd; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h3>لیست چت‌ها</h3>
+    <div id="chatPartners"></div>
+  </div>
+  <div id="chat">
+    <h2>چت</h2>
+    <div>
+      <h3>افزودن کاربر جدید</h3>
+      <label>آی‌دی کاربر:</label>
+      <input id="newUserId" type="text" placeholder="آی‌دی کاربر">
+      <label>نام کاربری:</label>
+      <input id="newUsername" type="text" placeholder="نام کاربری">
+      <button onclick="addUser()">افزودن کاربر</button>
+    </div>
+    <div>
+      <label>آی‌دی گیرنده:</label>
+      <input id="receiverId" type="text">
+      <button onclick="startChat()">شروع چت</button>
+    </div>
+    <div id="messages"></div>
+    <input id="messageInput" type="text" placeholder="پیام خود را بنویسید...">
+    <button onclick="sendMessage()">ارسال</button>
+  </div>
+  <script>
+    // توکن تست (جای این خط رو با توکن واقعی که تولید کردی پر کن)
+    const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTAwMjQsImlhdCI6MTc0OTA3MjY5NSwiZXhwIjoxNzQ5MjQ1NDk1fQ.hqfexYmHu7nvrNthNm5_9xc33-nSxZaSNCpRtUgqrFs'; // توکن رو اینجا بذار
+
+    const socket = io('http://localhost:5000', {
+      auth: {
+        token: token // ارسال توکن توی auth
+      }
+    });
+
+    socket.emit('getChatPartners');
+
+    async function addUser() {
+      const userId = document.getElementById('newUserId').value;
+      const username = document.getElementById('newUsername').value;
+      if (!userId || !username) {
+        alert('لطفاً آی‌دی کاربر و نام کاربری را وارد کنید');
+        return;
+      }
+
+      try {
+        const response = await fetch('http://localhost:3000/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ userId, username }),
+        });
+        const data = await response.json();
+        if (response.ok) {
+          alert('کاربر با موفقیت اضافه شد');
+          document.getElementById('newUserId').value = '';
+          document.getElementById('newUsername').value = '';
+        } else {
+          alert(data.message);
+        }
+      } catch (error) {
+        alert('خطا در افزودن کاربر: ' + error.message);
+      }
+    }
+
+    function startChat() {
+      const receiverId = document.getElementById('receiverId').value;
+      if (receiverId) {
+        socket.emit('join', { receiverId });
+      } else {
+        alert('لطفاً آی‌دی گیرنده را وارد کنید');
+      }
+    }
+
+    function sendMessage() {
+      const messageInput = document.getElementById('messageInput');
+      const message = messageInput.value;
+      const receiverId = document.getElementById('receiverId').value;
+      if (message && receiverId) {
+        socket.emit('sendMessage', { receiverId, message });
+        messageInput.value = '';
+      }
+    }
+
+    socket.on('loadMessages', (messages) => {
+      const messagesDiv = document.getElementById('messages');
+      messagesDiv.innerHTML = '';
+      messages.forEach((msg) => {
+        const div = document.createElement('div');
+        div.className = msg.sender === 'user123' ? 'message sent' : 'message received'; // فرض می‌کنیم senderId از توکن 'user123' باشه
+        div.textContent = `${msg.sender}: ${msg.message}`;
+        messagesDiv.appendChild(div);
+      });
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+
+    socket.on('receiveMessage', (msg) => {
+      const messagesDiv = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = msg.sender === 'user123' ? 'message sent' : 'message received';
+      div.textContent = `${msg.sender}: ${msg.message}`;
+      messagesDiv.appendChild(div);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+
+    socket.on('chatPartners', (partners) => {
+      const chatPartnersDiv = document.getElementById('chatPartners');
+      chatPartnersDiv.innerHTML = '';
+      partners.forEach((partnerId) => {
+        const div = document.createElement('div');
+        div.className = 'partner';
+        div.textContent = partnerId;
+        div.onclick = () => {
+          document.getElementById('receiverId').value = partnerId;
+          startChat();
+        };
+        chatPartnersDiv.appendChild(div);
+      });
+    });
+
+    socket.on('error', (error) => {
+      alert(error);
+    });
+  </script>
