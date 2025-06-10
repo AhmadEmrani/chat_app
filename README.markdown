@@ -112,4 +112,4 @@ This project is licensed under the [MIT License](LICENSE.md). You are free to us
 For full details, see the [LICENSE](LICENSE.md) file.
 
 ---
-Built with ❤️ by [AhmadEmrani](https://github.com/AhmadEmrani)
+Built  by [AhmadEmrani](https://github.com/AhmadEmrani)
